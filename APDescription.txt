@@ -1,0 +1,1 @@
+( ap-description  :name "CabinetMedicalPlatform" :ap-services (set ( ap-service  :name fipa.mts.mtp.http.std :type fipa.mts.mtp.http.std :addresses (sequence http://DESKTOP-DCNNL0S:7778/acc))))
