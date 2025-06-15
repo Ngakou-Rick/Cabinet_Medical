@@ -145,26 +145,28 @@ public class MedecinAgent extends GuiAgent {
 
     @Override
     protected void onGuiEvent(GuiEvent ge) {
-        if (ge.getType() == CMD_SEND_DIAGNOSIS) {
-            if (currentPatient == null) {
-                gui.displayMessage("ERREUR: Aucun patient n'est actuellement assigné.", true);
-                return;
-            }
-            String diagnostic = (String) ge.getParameter(0);
-            String prescription = (String) ge.getParameter(1);
-            sendDiagnosisToPatient(currentPatient.aid, diagnostic, prescription);
-            // After sending diagnosis, doctor might become available or wait for CMD_BECOME_AVAILABLE
-            // For now, let's assume they become available after sending diagnosis
-            // becomeAvailable(); // Or this can be a separate button click
-        } else if (ge.getType() == CMD_BECOME_AVAILABLE) {
-            becomeAvailable();
+        switch (ge.getType()) {
+            case CMD_SEND_DIAGNOSIS:
+                if (currentPatient != null) {
+                    String diagnostic = (String) ge.getParameter(0);
+                    String prescription = (String) ge.getParameter(1);
+                    String recommendations = (String) ge.getParameter(2);
+                    sendDiagnosisToPatient(currentPatient.aid, diagnostic, prescription, recommendations);
+                    gui.clearDiagnosisForm();
+                } else {
+                    gui.displayMessage("Aucun patient n'est actuellement sélectionné pour envoyer un diagnostic.", true);
+                }
+                break;
+            case CMD_BECOME_AVAILABLE:
+                becomeAvailable();
+                break;
         }
     }
 
-    private void sendDiagnosisToPatient(AID patientAid, String diagnostic, String prescription) {
+    private void sendDiagnosisToPatient(AID patientAid, String diagnostic, String prescription, String recommendations) {
         ACLMessage reply = new ACLMessage(ACLMessage.INFORM);
         reply.addReceiver(patientAid);
-        reply.setContent(String.format("DIAGNOSIS_PRESCRIPTION:Diagnostic:%s;Prescription:%s", diagnostic, prescription));
+        reply.setContent(String.format("DIAGNOSIS_PRESCRIPTION_RECOMMENDATIONS:Diagnostic:%s;Ordonnance:%s;Recommandations:%s", diagnostic, prescription, recommendations));
         send(reply);
         gui.displayMessage("Diagnostic envoyé à " + patientAid.getLocalName(), false);
         gui.clearPatientInfo(); // Clear patient info from GUI after sending

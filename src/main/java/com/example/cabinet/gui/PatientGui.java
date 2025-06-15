@@ -374,7 +374,27 @@ public class PatientGui extends JFrame {
     }
 
     private void performSendToPharmacie(ActionEvent e) {
-        // TO DO: Implement sending prescription to pharmacy
+        String selectedPharmacie = (String) pharmacieComboBox.getSelectedItem();
+        if (selectedPharmacie == null || selectedPharmacie.isEmpty()) {
+            displayMessage("Veuillez sélectionner une pharmacie.", true);
+            return;
+        }
+
+        String diagnostic = diagnosticArea.getText();
+        String prescription = ordonnanceArea.getText();
+
+        if (prescription.isEmpty() || prescription.equals("N/A")) {
+            displayMessage("Il n'y a aucune prescription à envoyer.", true);
+            return;
+        }
+
+        GuiEvent ge = new GuiEvent(this, PatientAgent.CMD_SEND_PRESCRIPTION_TO_PHARMACIE);
+        ge.addParameter(selectedPharmacie); // pharmacie name (local name)
+        ge.addParameter(diagnostic);
+        ge.addParameter(prescription);
+        myAgent.postGuiEvent(ge);
+
+        displayMessage("Prescription envoyée à la pharmacie " + selectedPharmacie, false);
     }
 
     public void updatePharmacieList(AID[] pharmacies) {

@@ -3,6 +3,11 @@ package com.example.cabinet.agents;
 import jade.core.AID;
 import jade.core.behaviours.CyclicBehaviour;
 import jade.core.behaviours.OneShotBehaviour;
+import jade.core.behaviours.TickerBehaviour;
+import jade.domain.DFService;
+import jade.domain.FIPAAgentManagement.DFAgentDescription;
+import jade.domain.FIPAAgentManagement.ServiceDescription;
+import jade.domain.FIPAException;
 import jade.gui.GuiAgent;
 import jade.gui.GuiEvent;
 import jade.lang.acl.ACLMessage;
@@ -18,6 +23,9 @@ public class PatientAgent extends GuiAgent {
 
     public static final int CMD_REQUEST_CONSULTATION = 1;
     public static final int CMD_SEND_SYMPTOMS = 2;
+    public static final int CMD_SEND_PRESCRIPTION_TO_PHARMACIE = 3;
+
+    public static final String SERVICE_TYPE_PHARMACIE = "pharmacie";
 
     @Override
     protected void setup() {
@@ -36,6 +44,28 @@ public class PatientAgent extends GuiAgent {
 
         // Add behaviour to listen for messages from Medecin (diagnosis/prescription)
         addBehaviour(new ReceiveDiagnosisBehaviour());
+
+        // Add behaviour to periodically search for pharmacies
+        addBehaviour(new TickerBehaviour(this, 10000) { // search every 10 seconds
+            protected void onTick() {
+                DFAgentDescription template = new DFAgentDescription();
+                ServiceDescription sd = new ServiceDescription();
+                sd.setType(SERVICE_TYPE_PHARMACIE);
+                template.addServices(sd);
+                try {
+                    DFAgentDescription[] result = DFService.search(myAgent, template);
+                    AID[] pharmacies = new AID[result.length];
+                    for (int i = 0; i < result.length; ++i) {
+                        pharmacies[i] = result[i].getName();
+                    }
+                    if (gui != null) {
+                        gui.updatePharmacieList(pharmacies);
+                    }
+                } catch (FIPAException fe) {
+                    fe.printStackTrace();
+                }
+            }
+        });
     }
 
     @Override
@@ -53,6 +83,12 @@ public class PatientAgent extends GuiAgent {
                 } else {
                     gui.displayMessage("Erreur: Aucun médecin n'est encore assigné.", true);
                 }
+                break;
+            case CMD_SEND_PRESCRIPTION_TO_PHARMACIE:
+                String pharmacieName = (String) ge.getParameter(0);
+                String diagnostic = (String) ge.getParameter(1);
+                String prescription = (String) ge.getParameter(2);
+                sendPrescriptionToPharmacie(pharmacieName, diagnostic, prescription);
                 break;
         }
     }
@@ -85,7 +121,7 @@ public class PatientAgent extends GuiAgent {
                 System.out.println(getLocalName() + ": Sending symptoms to " + medecinAID.getLocalName());
                 ACLMessage msg = new ACLMessage(ACLMessage.INFORM);
                 msg.addReceiver(medecinAID);
-                msg.setContent("PATIENT_SYMPTOMS:" + symptoms);
+                msg.setContent("SYMPTOMS:" + symptoms);
                 // msg.setConversationId("symptoms-patient-" + getAID().getLocalName()); // Could be useful
                 send(msg);
                 gui.displayMessage("Symptômes envoyés au Dr. " + medecinAID.getLocalName(), false);
@@ -147,40 +183,47 @@ public class PatientAgent extends GuiAgent {
     private class ReceiveDiagnosisBehaviour extends CyclicBehaviour {
         @Override
         public void action() {
-            // Ensure medecinAID is known before trying to match its messages
-            // if (medecinAID == null) { block(); return; }
+            if (medecinAID == null) {
+                block();
+                return; // Don't process until a doctor is assigned
+            }
 
-            MessageTemplate mt = MessageTemplate.MatchPerformative(ACLMessage.INFORM);
-            // If medecinAID is known, we can be more specific:
-            // MessageTemplate mt = MessageTemplate.and(
-            //     MessageTemplate.MatchPerformative(ACLMessage.INFORM),
-            //     MessageTemplate.MatchSender(medecinAID) // Only messages from the assigned doctor
-            // );
+            MessageTemplate mt = MessageTemplate.and(
+                MessageTemplate.MatchPerformative(ACLMessage.INFORM),
+                MessageTemplate.MatchSender(medecinAID) // Only messages from the assigned doctor
+            );
 
             ACLMessage msg = myAgent.receive(mt);
             if (msg != null) {
                 String content = msg.getContent();
                 System.out.println(getLocalName() + ": Received message from " + msg.getSender().getName() + ": " + content);
 
-                if (content != null && content.startsWith("DIAGNOSIS_PRESCRIPTION:")) {
-                    String diagnosisInfo = content.substring("DIAGNOSIS_PRESCRIPTION:".length());
-                    // diagnosisInfo format: "Recommandations:Rest;Ordonnance:Pills;Diagnostic:Flu"
-                    String recommendations = "Non spécifié";
-                    String ordonnance = "Non spécifié";
+                if (content != null && content.startsWith("DIAGNOSIS_PRESCRIPTION_RECOMMENDATIONS:")) {
+                    String diagnosisInfo = content.substring("DIAGNOSIS_PRESCRIPTION_RECOMMENDATIONS:".length());
+                    // diagnosisInfo format: "Diagnostic:Flu;Ordonnance:Pills;Recommandations:Rest"
                     String diagnostic = "Non spécifié";
+                    String ordonnance = "Non spécifié";
+                    String recommendations = "Non spécifié";
 
                     String[] parts = diagnosisInfo.split(";");
                     for (String part : parts) {
-                        if (part.startsWith("Recommandations:")) {
-                            recommendations = part.substring("Recommandations:".length());
-                        } else if (part.startsWith("Ordonnance:")) {
-                            ordonnance = part.substring("Ordonnance:".length());
-                        } else if (part.startsWith("Diagnostic:")) {
-                            diagnostic = part.substring("Diagnostic:".length());
+                        String[] keyValue = part.split(":", 2);
+                        if (keyValue.length == 2) {
+                            switch (keyValue[0]) {
+                                case "Diagnostic":
+                                    diagnostic = keyValue[1];
+                                    break;
+                                case "Ordonnance":
+                                    ordonnance = keyValue[1];
+                                    break;
+                                case "Recommandations":
+                                    recommendations = keyValue[1];
+                                    break;
+                            }
                         }
                     }
                     gui.displayDiagnosisAndPrescription(diagnostic, ordonnance, recommendations);
-                    gui.displayMessage("Diagnostic et ordonnance reçus du médecin.", false);
+                    gui.displayMessage("Diagnostic, ordonnance et recommandations reçus du médecin.", false);
                 } else if (content != null && content.startsWith("ASSIGNMENT_DETAILS:")) {
                     // This is handled by ReceiveConsultationAssignmentBehaviour, but good to be aware
                     // Potentially, could use different message ontologies or conversation IDs to differentiate
@@ -192,6 +235,23 @@ public class PatientAgent extends GuiAgent {
                 block();
             }
         }
+    }
+
+    private void sendPrescriptionToPharmacie(String pharmacieName, String diagnostic, String prescription) {
+        addBehaviour(new OneShotBehaviour() {
+            @Override
+            public void action() {
+                AID pharmacieAID = new AID(pharmacieName, AID.ISLOCALNAME);
+                System.out.println(getLocalName() + ": Sending prescription to " + pharmacieAID.getLocalName());
+                ACLMessage msg = new ACLMessage(ACLMessage.REQUEST);
+                msg.addReceiver(pharmacieAID);
+                String patientName = getLocalName();
+                String content = String.format("SEND_PRESCRIPTION_TO_PHARMACIE:PatientName:%s;Diagnostic:%s;Prescription:%s",
+                    patientName, diagnostic, prescription);
+                msg.setContent(content);
+                send(msg);
+            }
+        });
     }
 
     @Override

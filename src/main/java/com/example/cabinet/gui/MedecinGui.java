@@ -28,6 +28,7 @@ public class MedecinGui extends JFrame {
 
     private JTextArea diagnosticArea;
     private JTextArea prescriptionArea;
+    private JTextArea recommendationsArea;
     private JButton sendDiagnosisButton;
     private JButton becomeAvailableButton;
     private JTextArea statusMessageArea;
@@ -110,21 +111,28 @@ public class MedecinGui extends JFrame {
         centerPanel.add(patientInfoPanel);
 
         // Diagnosis and Prescription Panel
-        JPanel diagnosisPanel = new JPanel(new GridLayout(2, 1, 5, 5));
+        JPanel diagnosisPanel = new JPanel(new GridLayout(1, 3, 10, 0));
         diagnosisPanel.setBackground(GuiUtils.COLOR_BACKGROUND_LIGHT);
         diagnosisPanel.setBorder(BorderFactory.createTitledBorder(BorderFactory.createEtchedBorder(),
                 "Diagnostic et Prescription", TitledBorder.LEFT, TitledBorder.TOP, GuiUtils.FONT_SUBTITLE, GuiUtils.COLOR_ACCENT));
-        ((TitledBorder) diagnosisPanel.getBorder()).setTitleColor(GuiUtils.COLOR_ACCENT);
 
-        diagnosticArea = GuiUtils.styleTextArea(new JTextArea(5, 20), true);
+        diagnosticArea = new JTextArea(5, 20);
+        GuiUtils.styleTextArea(diagnosticArea, true);
         JScrollPane diagnosticScrollPane = new JScrollPane(diagnosticArea);
-        diagnosticScrollPane.setBorder(BorderFactory.createTitledBorder("Diagnostic:"));
+        diagnosticScrollPane.setBorder(BorderFactory.createTitledBorder("Diagnostic"));
         diagnosisPanel.add(diagnosticScrollPane);
 
-        prescriptionArea = GuiUtils.styleTextArea(new JTextArea(5, 20), true);
+        prescriptionArea = new JTextArea(5, 20);
+        GuiUtils.styleTextArea(prescriptionArea, true);
         JScrollPane prescriptionScrollPane = new JScrollPane(prescriptionArea);
-        prescriptionScrollPane.setBorder(BorderFactory.createTitledBorder("Prescription:"));
+        prescriptionScrollPane.setBorder(BorderFactory.createTitledBorder("Prescription"));
         diagnosisPanel.add(prescriptionScrollPane);
+
+        recommendationsArea = new JTextArea(5, 20);
+        GuiUtils.styleTextArea(recommendationsArea, true);
+        JScrollPane recommendationsScrollPane = new JScrollPane(recommendationsArea);
+        recommendationsScrollPane.setBorder(BorderFactory.createTitledBorder("Recommandations"));
+        diagnosisPanel.add(recommendationsScrollPane);
         centerPanel.add(diagnosisPanel);
 
         mainPanel.add(centerPanel, BorderLayout.CENTER);
@@ -154,15 +162,17 @@ public class MedecinGui extends JFrame {
     private void performSendDiagnosis(ActionEvent e) {
         String diagnostic = diagnosticArea.getText().trim();
         String prescription = prescriptionArea.getText().trim();
+        String recommendations = recommendationsArea.getText().trim();
 
-        if (diagnostic.isEmpty() || prescription.isEmpty()) {
-            displayMessage("ERREUR: Le diagnostic et la prescription ne peuvent pas être vides.", true);
+        if (diagnostic.isEmpty() || prescription.isEmpty() || recommendations.isEmpty()) {
+            displayMessage("ERREUR: Le diagnostic, la prescription et les recommandations ne peuvent pas être vides.", true);
             return;
         }
 
         GuiEvent ge = new GuiEvent(this, MedecinAgent.CMD_SEND_DIAGNOSIS);
         ge.addParameter(diagnostic);
         ge.addParameter(prescription);
+        ge.addParameter(recommendations);
         myAgent.postGuiEvent(ge);
     }
 
@@ -228,6 +238,7 @@ public class MedecinGui extends JFrame {
         SwingUtilities.invokeLater(() -> {
             diagnosticArea.setText("");
             prescriptionArea.setText("");
+            recommendationsArea.setText("");
         });
     }
 
