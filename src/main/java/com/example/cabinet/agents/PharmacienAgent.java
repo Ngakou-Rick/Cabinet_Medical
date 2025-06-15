@@ -59,6 +59,9 @@ public class PharmacienAgent extends GuiAgent {
 
         // Behaviour to receive prescriptions from patients
         addBehaviour(new ReceivePrescriptionBehaviour());
+
+        // Behaviour to receive payment confirmations
+        addBehaviour(new ReceivePaymentBehaviour());
     }
 
     private void registerService() {
@@ -94,22 +97,21 @@ public class PharmacienAgent extends GuiAgent {
         gui.updatePrescriptionInList(pInfo);
         gui.displayMessage("Statut de la prescription pour " + pInfo.patientName + " mis à jour: " + newStatus, false);
         if ("Prête".equalsIgnoreCase(newStatus)) {
-            // Optionally auto-notify or enable a button to notify
-            // For now, let's assume GUI has a separate button for notification
+            notifyPatientMedicationReady(pInfo);
         }
     }
 
     private void notifyPatientMedicationReady(PrescriptionInfo pInfo) {
-        if (pInfo.patientAID == null) {
-            gui.displayMessage("ERREUR: AID du patient inconnu pour " + pInfo.patientName, true);
-            return;
-        }
-        ACLMessage informMsg = new ACLMessage(ACLMessage.INFORM);
-        informMsg.addReceiver(pInfo.patientAID);
-        informMsg.setContent("MEDICATION_READY: Pharmacie " + getLocalName() + ": Votre médication est prête.");
-        send(informMsg);
+        ACLMessage notification = new ACLMessage(ACLMessage.INFORM);
+        notification.addReceiver(pInfo.patientAID);
+        // Send pharmacy name so patient knows where to go
+        notification.setContent("MEDICATION_READY:" + getLocalName());
+        send(notification);
         gui.displayMessage("Patient " + pInfo.patientName + " notifié que sa médication est prête.", false);
-        updatePrescriptionStatus(pInfo, "Notifié (Prête)");
+        // Status is updated in the GUI, let's keep the core status as 'Prête' until notified
+        // and then 'Notifié' after sending notification.
+        pInfo.status = "Notifié (Prête)";
+        gui.updatePrescriptionInList(pInfo);
     }
 
     private class ReceivePrescriptionBehaviour extends CyclicBehaviour {
@@ -169,6 +171,39 @@ public class PharmacienAgent extends GuiAgent {
                     System.err.println(getLocalName() + ": Error parsing prescription message: " + e.getMessage());
                     gui.displayMessage("ERREUR: Format de message de prescription incorrect de " + patientAID.getLocalName(), true);
                     // Send error reply?
+                }
+            } else {
+                block();
+            }
+        }
+    }
+
+    private PrescriptionInfo findPrescriptionByPatient(AID patientAID) {
+        for (PrescriptionInfo pInfo : receivedPrescriptions) {
+            if (pInfo.patientAID.equals(patientAID)) {
+                return pInfo;
+            }
+        }
+        return null;
+    }
+
+    private class ReceivePaymentBehaviour extends CyclicBehaviour {
+        @Override
+        public void action() {
+            MessageTemplate mt = new MessageTemplate(msg ->
+                msg.getPerformative() == ACLMessage.CONFIRM &&
+                msg.getContent() != null &&
+                msg.getContent().startsWith("PAYMENT_CONFIRMED:")
+            );
+            ACLMessage msg = myAgent.receive(mt);
+            if (msg != null) {
+                System.out.println(getLocalName() + ": Received payment confirmation from " + msg.getSender().getName());
+                AID patientAID = msg.getSender();
+                PrescriptionInfo pInfo = findPrescriptionByPatient(patientAID);
+                if (pInfo != null) {
+                    updatePrescriptionStatus(pInfo, "Délivrée");
+                } else {
+                    System.err.println(getLocalName() + ": Received payment from " + patientAID.getLocalName() + " but no matching prescription found.");
                 }
             } else {
                 block();

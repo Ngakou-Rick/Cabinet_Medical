@@ -6,6 +6,7 @@ import jade.gui.GuiEvent;
 import javax.swing.*;
 import javax.swing.border.TitledBorder;
 import javax.swing.table.DefaultTableModel;
+import java.awt.event.ActionListener;
 import jade.core.AID;
 import java.awt.*;
 import java.awt.event.ActionEvent;
@@ -34,6 +35,7 @@ public class PatientGui extends JFrame {
     private JComboBox<String> pharmacieComboBox;
     private JButton sendToPharmacieButton;
     private JTextArea pharmacieStatusArea;
+    private JButton payButton;
 
     private JTabbedPane tabbedPane;
 
@@ -233,7 +235,7 @@ public class PatientGui extends JFrame {
         gbc.insets = new Insets(15, 5, 5, 5);
         symptomsInputPanel.add(sendSymptomsButton, gbc);
 
-        sendSymptomsButton.addActionListener(e -> {
+        sendSymptomsButton.addActionListener(_ -> {
             List<String> symptomsList = new ArrayList<>();
             if (fievreCheckBox.isSelected()) symptomsList.add("Fièvre");
             if (touxCheckBox.isSelected()) symptomsList.add("Toux");
@@ -258,6 +260,10 @@ public class PatientGui extends JFrame {
 
         mainPanel.add(symptomsInputPanel, BorderLayout.NORTH);
 
+        // This panel will hold both the treatment and pharmacy panels
+        JPanel southContainerPanel = new JPanel(new BorderLayout(10, 10));
+        southContainerPanel.setBackground(GuiUtils.COLOR_BACKGROUND);
+
         // Treatment Display Panel
         JPanel treatmentPanel = GuiUtils.createCardPanel();
         treatmentPanel.setLayout(new GridLayout(0, 1, 10, 10)); // Single column, multiple rows
@@ -269,40 +275,46 @@ public class PatientGui extends JFrame {
         treatmentPanel.add(createLabeledPanel("Diagnostic du Médecin", diagnosticArea));
         treatmentPanel.add(createLabeledPanel("Recommandations", recommendationsArea));
         treatmentPanel.add(createLabeledPanel("Ordonnance", ordonnanceArea));
+        
+        southContainerPanel.add(treatmentPanel, BorderLayout.CENTER);
 
         // Pharmacy Interaction Panel
-        JPanel pharmacieInteractionPanel = new JPanel(new BorderLayout(5, 5));
-        pharmacieInteractionPanel.setBackground(GuiUtils.COLOR_BACKGROUND_LIGHT);
+        JPanel pharmacieInteractionPanel = GuiUtils.createCardPanel();
+        pharmacieInteractionPanel.setLayout(new BorderLayout(5, 5));
         pharmacieInteractionPanel.setBorder(BorderFactory.createTitledBorder(BorderFactory.createEtchedBorder(),
                 "Interactions Pharmacie", TitledBorder.LEFT, TitledBorder.TOP, GuiUtils.FONT_SUBTITLE, GuiUtils.COLOR_ACCENT));
 
         JPanel pharmacieSelectionPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
-        pharmacieSelectionPanel.setBackground(GuiUtils.COLOR_BACKGROUND_LIGHT);
+        pharmacieSelectionPanel.setBackground(GuiUtils.COLOR_PANEL_BACKGROUND);
         pharmacieComboBox = new JComboBox<>();
         GuiUtils.styleComboBox(pharmacieComboBox);
         pharmacieComboBox.setToolTipText("Sélectionnez une pharmacie");
-        sendToPharmacieButton = GuiUtils.styleButton(new JButton("Envoyer Prescription à la Pharmacie"));
+        sendToPharmacieButton = new JButton("Envoyer Prescription");
+        GuiUtils.styleButton(sendToPharmacieButton);
         sendToPharmacieButton.addActionListener(this::performSendToPharmacie);
         pharmacieSelectionPanel.add(GuiUtils.styleLabel(new JLabel("Pharmacie:"), false));
         pharmacieSelectionPanel.add(pharmacieComboBox);
         pharmacieSelectionPanel.add(sendToPharmacieButton);
         pharmacieInteractionPanel.add(pharmacieSelectionPanel, BorderLayout.NORTH);
 
-        pharmacieStatusArea = GuiUtils.styleTextArea(new JTextArea(3, 20), false);
-        pharmacieStatusArea.setEditable(false);
+        pharmacieStatusArea = GuiUtils.styleTextArea(new JTextArea(4, 20), false);
+        pharmacieStatusArea.setToolTipText("Notifications de la pharmacie");
         pharmacieInteractionPanel.add(new JScrollPane(pharmacieStatusArea), BorderLayout.CENTER);
-        pharmacieStatusArea.setToolTipText("Statut des interactions avec la pharmacie");
 
-        // Add pharmacy panel below diagnosis/prescription
-        JPanel southPanelForSymptomsTab = new JPanel(new BorderLayout(5,5));
-        southPanelForSymptomsTab.setBackground(GuiUtils.COLOR_BACKGROUND_LIGHT);
-        southPanelForSymptomsTab.add(treatmentPanel, BorderLayout.CENTER); // Existing panel
-        southPanelForSymptomsTab.add(pharmacieInteractionPanel, BorderLayout.SOUTH); // New pharmacy panel
+        payButton = new JButton("Payer et Récupérer");
+        GuiUtils.styleButton(payButton);
+        payButton.setVisible(false); // Initially hidden
+        JPanel southButtonPanel = new JPanel(new FlowLayout(FlowLayout.CENTER));
+        southButtonPanel.setBackground(GuiUtils.COLOR_PANEL_BACKGROUND);
+        southButtonPanel.add(payButton);
+        pharmacieInteractionPanel.add(southButtonPanel, BorderLayout.SOUTH);
+        
+        southContainerPanel.add(pharmacieInteractionPanel, BorderLayout.SOUTH);
 
-        mainPanel.add(southPanelForSymptomsTab, BorderLayout.CENTER);
+        mainPanel.add(southContainerPanel, BorderLayout.CENTER);
+
         return mainPanel;
     }
-
     private void styleSymptomCheckbox(JCheckBox checkBox) {
         checkBox.setFont(GuiUtils.FONT_PRIMARY);
         checkBox.setBackground(GuiUtils.COLOR_PANEL_BACKGROUND);
@@ -363,6 +375,26 @@ public class PatientGui extends JFrame {
             recommendationsArea.setText(recommendations != null ? recommendations : "N/A");
             sendToPharmacieButton.setEnabled(true); // Enable pharmacy interaction now that prescription is available
             JOptionPane.showMessageDialog(this, "Diagnostic, prescription et recommandations reçus.", "Traitement Reçu", JOptionPane.INFORMATION_MESSAGE);
+        });
+    }
+
+    public void displayPharmacyNotification(String message, String pharmacieName) {
+        SwingUtilities.invokeLater(() -> {
+            pharmacieStatusArea.append("\n- " + message);
+            if (pharmacieName != null) {
+                // Clear previous listeners to avoid multiple triggers
+                for (ActionListener al : payButton.getActionListeners()) {
+                    payButton.removeActionListener(al);
+                }
+                payButton.setVisible(true);
+                payButton.addActionListener(_ -> { // Use e for the event parameter
+                    GuiEvent ge = new GuiEvent(this, PatientAgent.CMD_PAY_FOR_MEDICATION);
+                    ge.addParameter(pharmacieName);
+                    myAgent.postGuiEvent(ge);
+                    pharmacieStatusArea.append("\n- Paiement confirmé. En attente de la livraison de la pharmacie.");
+                    payButton.setVisible(false);
+                });
+            }
         });
     }
 

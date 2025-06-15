@@ -24,6 +24,7 @@ public class PatientAgent extends GuiAgent {
     public static final int CMD_REQUEST_CONSULTATION = 1;
     public static final int CMD_SEND_SYMPTOMS = 2;
     public static final int CMD_SEND_PRESCRIPTION_TO_PHARMACIE = 3;
+    public static final int CMD_PAY_FOR_MEDICATION = 4;
 
     public static final String SERVICE_TYPE_PHARMACIE = "pharmacie";
 
@@ -66,6 +67,9 @@ public class PatientAgent extends GuiAgent {
                 }
             }
         });
+
+        // Behaviour to listen for notifications from the pharmacy
+        addBehaviour(new ReceivePharmacyNotificationBehaviour());
     }
 
     @Override
@@ -89,6 +93,10 @@ public class PatientAgent extends GuiAgent {
                 String diagnostic = (String) ge.getParameter(1);
                 String prescription = (String) ge.getParameter(2);
                 sendPrescriptionToPharmacie(pharmacieName, diagnostic, prescription);
+                break;
+            case CMD_PAY_FOR_MEDICATION:
+                String pharmacieNameToPay = (String) ge.getParameter(0);
+                confirmPaymentToPharmacie(pharmacieNameToPay);
                 break;
         }
     }
@@ -252,6 +260,51 @@ public class PatientAgent extends GuiAgent {
                 send(msg);
             }
         });
+    }
+
+    private void confirmPaymentToPharmacie(String pharmacieName) {
+        addBehaviour(new OneShotBehaviour() {
+            @Override
+            public void action() {
+                AID pharmacieAID = new AID(pharmacieName, AID.ISLOCALNAME);
+                System.out.println(getLocalName() + ": Sending payment confirmation to " + pharmacieAID.getLocalName());
+                ACLMessage msg = new ACLMessage(ACLMessage.CONFIRM);
+                msg.addReceiver(pharmacieAID);
+                msg.setContent("PAYMENT_CONFIRMED:" + getLocalName());
+                send(msg);
+            }
+        });
+    }
+
+    private class ReceivePharmacyNotificationBehaviour extends CyclicBehaviour {
+        @Override
+        public void action() {
+            MessageTemplate mt = new MessageTemplate(msg ->
+                msg.getPerformative() == ACLMessage.INFORM &&
+                msg.getContent() != null &&
+                (msg.getContent().startsWith("MEDICATION_READY:") || msg.getContent().startsWith("PRESCRIPTION_RECEIVED_ACK:"))
+            );
+
+            ACLMessage msg = myAgent.receive(mt);
+            if (msg != null) {
+                String content = msg.getContent();
+                AID sender = msg.getSender();
+                System.out.println(getLocalName() + ": Received notification from " + sender.getLocalName() + ": " + content);
+
+                if (content.startsWith("MEDICATION_READY:")) {
+                    String pharmacieName = content.substring("MEDICATION_READY:".length());
+                    if (gui != null) {
+                        gui.displayPharmacyNotification("Votre médication est prête à la pharmacie " + pharmacieName + ".", pharmacieName);
+                    }
+                } else if (content.startsWith("PRESCRIPTION_RECEIVED_ACK:")) {
+                     if (gui != null) {
+                        gui.displayPharmacyNotification(content.substring("PRESCRIPTION_RECEIVED_ACK:".length()), null);
+                    }
+                }
+            } else {
+                block();
+            }
+        }
     }
 
     @Override
